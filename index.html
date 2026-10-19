@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>重力彈弓 Gravity Slingshot</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: #05060f;
+    color: #e8ecff;
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { position: relative; }
+  canvas {
+    display: block;
+    border-radius: 14px;
+    touch-action: none;
+    box-shadow: 0 0 50px rgba(90, 110, 255, .25), inset 0 0 0 1px rgba(140, 160, 255, .2);
+    cursor: crosshair;
+  }
+
+  /* 上方資訊列 */
+  .hud {
+    position: absolute; top: 10px; left: 12px; right: 12px;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    pointer-events: none; font-size: clamp(11px, 1.7vw, 15px);
+  }
+  .hud .left { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    background: rgba(18, 22, 50, .75);
+    border: 1px solid rgba(140, 160, 255, .3);
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip b { color: #ffe27a; }
+  .hud .btns { display: flex; gap: 6px; pointer-events: auto; }
+
+  button {
+    font: inherit; cursor: pointer;
+    border: 1px solid rgba(150, 170, 255, .55);
+    background: rgba(40, 48, 115, .85);
+    color: #fff; padding: 6px 14px; border-radius: 999px;
+    transition: background .15s, transform .15s;
+  }
+  button:hover { background: rgba(85, 100, 210, .95); transform: translateY(-1px); }
+  button.big { font-size: clamp(15px, 2.4vw, 20px); padding: 10px 28px; }
+  button.primary { background: linear-gradient(90deg, #5b6cff, #a560ff); border-color: transparent; }
+
+  /* 覆蓋畫面（選單、選關、過關…） */
+  .overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(10px, 2.2vw, 18px);
+    background: rgba(5, 6, 22, .74);
+    backdrop-filter: blur(3px);
+    border-radius: 14px; text-align: center; padding: 16px;
+  }
+  .hidden { display: none !important; }
+  h1 {
+    font-size: clamp(30px, 6.5vw, 62px); letter-spacing: .08em;
+    background: linear-gradient(90deg, #8fd3ff, #c39bff, #ff9ad5);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  h2 { font-size: clamp(22px, 4vw, 36px); }
+  .sub { opacity: .8; font-size: clamp(12px, 1.9vw, 16px); line-height: 1.7; max-width: 560px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  .cards { display: flex; gap: clamp(8px, 2vw, 18px); flex-wrap: wrap; justify-content: center; }
+  .card {
+    width: clamp(130px, 22vw, 200px);
+    padding: 16px 12px; border-radius: 14px;
+    background: rgba(25, 30, 70, .85);
+    border: 1px solid rgba(150, 170, 255, .35);
+    display: flex; flex-direction: column; gap: 6px; align-items: center;
+    cursor: pointer; transition: transform .15s, border-color .15s;
+  }
+  .card:hover { transform: translateY(-3px); border-color: #b49bff; }
+  .card .num { font-size: clamp(26px, 4vw, 38px); font-weight: 700; }
+  .card .name { font-size: clamp(12px, 1.8vw, 15px); opacity: .85; }
+  .card .rec { font-size: 12px; opacity: .7; }
+  .stars { color: #ffe27a; letter-spacing: 3px; font-size: clamp(18px, 3vw, 26px); }
+  .stars .off { color: rgba(255, 255, 255, .2); }
+  .bigstars { font-size: clamp(36px, 7vw, 60px); }
+
+  /* 遊戲說明 */
+  #help { position: fixed; inset: 0; z-index: 10; border-radius: 0; justify-content: flex-start; overflow-y: auto; }
+  .help-panel {
+    margin: auto 0;
+    width: min(680px, 100%);
+    background: rgba(18, 22, 55, .92);
+    border: 1px solid rgba(150, 170, 255, .4);
+    border-radius: 16px;
+    padding: clamp(14px, 3vw, 26px);
+    display: flex; flex-direction: column; gap: clamp(8px, 1.6vw, 14px);
+    text-align: left;
+  }
+  .help-panel h2 { text-align: center; }
+  .help-grid { display: flex; gap: clamp(10px, 2vw, 20px); align-items: center; }
+  .help-grid svg { flex: 0 0 auto; width: clamp(120px, 26vw, 210px); height: auto; }
+  .help-list { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: clamp(12px, 1.8vw, 15px); line-height: 1.6; }
+  .help-list li { display: flex; gap: 8px; }
+  .help-list .ico { flex: 0 0 1.6em; text-align: center; }
+  .gravity-box {
+    background: rgba(120, 90, 255, .15);
+    border-left: 3px solid #a78bfa;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: clamp(12px, 1.8vw, 15px); line-height: 1.6;
+  }
+  .help-panel .row { margin-top: 4px; }
+  @media (max-width: 520px) { .help-grid { flex-direction: column; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <!-- 遊戲中資訊列 -->
+    <div class="hud hidden" id="hud">
+      <div class="left">
+        <span class="chip" id="hudLevel">第 1 關</span>
+        <span class="chip">發射次數 <b id="hudShots">0</b></span>
+        <span class="chip">星星 <b id="hudStars">0</b> / 3</span>
+      </div>
+      <div class="btns">
+        <button id="btnRetry">重來</button>
+        <button id="btnLevels">選關</button>
+      </div>
+    </div>
+
+    <!-- 主選單 -->
+    <div class="overlay hidden" id="menu">
+      <h1>重力彈弓</h1>
+      <p class="sub">借助行星的引力彎曲飛行路線，把探測器送進<span style="color:#d29bff">傳送門</span>！</p>
+      <div class="row">
+        <button class="big primary" id="btnStart">開始遊戲</button>
+        <button class="big" id="btnSelect">選擇關卡</button>
+      </div>
+      <button id="btnHelp">遊戲說明</button>
+    </div>
+
+    <!-- 遊戲說明（一進入就顯示） -->
+    <div class="overlay" id="help">
+      <div class="help-panel">
+        <h2>遊戲說明</h2>
+        <div class="help-grid">
+          <!-- 示意圖：軌跡被行星引力拉彎 -->
+          <svg viewBox="0 0 220 160" aria-label="探測器軌跡被行星引力拉彎的示意圖">
+            <defs>
+              <radialGradient id="hp" cx="35%" cy="35%">
+                <stop offset="0" stop-color="#ffb36b"/><stop offset="1" stop-color="#c2410c"/>
+              </radialGradient>
+            </defs>
+            <circle cx="115" cy="105" r="46" fill="none" stroke="rgba(255,179,107,.25)" stroke-dasharray="3 5"/>
+            <circle cx="115" cy="105" r="22" fill="url(#hp)"/>
+            <line x1="20" y1="60" x2="205" y2="60" stroke="rgba(255,255,255,.35)" stroke-dasharray="5 5"/>
+            <text x="150" y="52" fill="rgba(255,255,255,.55)" font-size="10">原本的方向</text>
+            <path d="M20 60 C 80 60, 120 60, 150 80 S 185 125, 195 145" fill="none" stroke="#8fdcff" stroke-width="3"/>
+            <circle cx="20" cy="60" r="5" fill="#e0f7ff"/>
+            <path d="M188 136 L196 147 L199 133" fill="none" stroke="#8fdcff" stroke-width="3"/>
+            <text x="58" y="150" fill="#8fdcff" font-size="10">被重力拉彎的軌跡</text>
+          </svg>
+          <ul class="help-list">
+            <li><span class="ico">🖱️</span><span><b>按住往後拉</b>，放開發射</span></li>
+            <li><span class="ico">🌀</span><span>飛進<b style="color:#d29bff">傳送門</b>就過關</span></li>
+            <li><span class="ico">⭐</span><span>一發吃越多<b style="color:#ffe27a">星星</b>越高分</span></li>
+          </ul>
+        </div>
+        <div class="gravity-box">
+          <b>🪐 小心重力！</b>經過星球附近時，軌跡會被<b>重力吸引而彎曲</b>，善用它繞過星球吧！
+        </div>
+        <div class="row">
+          <button class="big primary" id="btnHelpOk">我知道了，開始！</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 選關 -->
+    <div class="overlay hidden" id="select">
+      <h2>選擇關卡</h2>
+      <div class="cards" id="cards"></div>
+      <button id="btnBackMenu">回主選單</button>
+    </div>
+
+    <!-- 過關 -->
+    <div class="overlay hidden" id="win">
+      <h2>任務成功！</h2>
+      <div class="stars bigstars" id="winStars"></div>
+      <p class="sub" id="winInfo"></p>
+      <div class="row">
+        <button class="primary" id="btnNext">下一關</button>
+        <button id="btnAgain">再玩一次</button>
+        <button id="btnWinLevels">選擇關卡</button>
+      </div>
+    </div>
+
+    <!-- 全破 -->
+    <div class="overlay hidden" id="end">
+      <h1>任務全部完成</h1>
+      <div class="stars bigstars" id="endStars"></div>
+      <p class="sub" id="endInfo"></p>
+      <div class="row">
+        <button class="primary" id="btnEndLevels">挑戰更高分</button>
+        <button id="btnEndMenu">回主選單</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+//  物理與關卡資料（遊戲世界固定 1000 x 600，畫面會等比例縮放）
+// ================================================================
+// @@SIM_START
+const W = 1000, H = 600;
+const PROBE_R = 6;        // 探測器半徑
+const MAX_DRAG = 150;     // 最大拉動距離
+const POWER = 3.0;        // 拉動距離 → 速度 的倍率
+const MAX_FLIGHT = 14;    // 最長飛行秒數，超過算迷失
+const STAR_R = 36;
+const GRAVITY = 1.6;      // 重力強度倍率（越大越強）        // 吃到星星的距離
+
+// type: planet 行星（吸引） / repulsor 反重力星（排斥） / moon 衛星（繞行）
+const LEVELS = [
+  {
+    name: '初次彈射',
+    launch: { x: 100, y: 470 },
+    portal: { x: 900, y: 470, r: 50 },
+    bodies: [
+      { type: 'planet', x: 500, y: 470, r: 45, gm: 2.4e6, c1: '#ffb36b', c2: '#c2410c' },
+    ],
+    stars: [ { x: 300, y: 360 }, { x: 500, y: 330 }, { x: 700, y: 360 } ],
+  },
+  {
+    name: '雙星迴廊',
+    launch: { x: 100, y: 300 },
+    portal: { x: 900, y: 120, r: 50 },
+    bodies: [
+      { type: 'planet', x: 420, y: 300, r: 48, gm: 3.0e6, c1: '#7dd3fc', c2: '#1d4ed8' },
+      { type: 'planet', x: 720, y: 260, r: 34, gm: 2.0e6, c1: '#86efac', c2: '#15803d' },
+    ],
+    stars: [ { x: 420, y: 430 }, { x: 600, y: 420 }, { x: 830, y: 260 } ],
+  },
+  {
+    name: '衛星之舞',
+    launch: { x: 100, y: 500 },
+    portal: { x: 900, y: 280, r: 50 },
+    bodies: [
+      { type: 'repulsor', x: 360, y: 330, r: 26, gm: -0.8e6 },
+      { type: 'planet', x: 680, y: 300, r: 42, gm: 3.0e6, c1: '#f9a8d4', c2: '#9d174d' },
+      { type: 'moon', r: 10, gm: 2.0e5, orbit: { cx: 680, cy: 300, radius: 115, speed: 0.7, phase: 0 } },
+    ],
+    stars: [ { x: 310, y: 410 }, { x: 490, y: 385 }, { x: 710, y: 370 } ],
+  },
+];
+
+// 天體在時間 t 的位置（衛星會繞圈移動）
+function bodyPos(b, t) {
+  if (!b.orbit) return { x: b.x, y: b.y };
+  const o = b.orbit;
+  const a = o.phase + o.speed * t;
+  return { x: o.cx + Math.cos(a) * o.radius, y: o.cy + Math.sin(a) * o.radius };
+}
+
+function createShot(level, vx, vy, t0) {
+  return { x: level.launch.x, y: level.launch.y, vx, vy, t: t0, flight: 0, got: [], status: 'flying', hit: null };
+}
+
+// 前進一小步：計算引力、移動、判定碰撞 / 星星 / 傳送門 / 出界
+function stepShot(s, level, dt) {
+  let ax = 0, ay = 0;
+  for (const b of level.bodies) {
+    const p = bodyPos(b, s.t);
+    const dx = p.x - s.x, dy = p.y - s.y;
+    const d2 = dx * dx + dy * dy;
+    const d = Math.sqrt(d2);
+    if (d < b.r + PROBE_R) { s.status = 'crash'; s.hit = b; return; }
+    const f = GRAVITY * b.gm / Math.max(d2, 400);
+    ax += f * dx / d;
+    ay += f * dy / d;
+  }
+  s.vx += ax * dt; s.vy += ay * dt;
+  s.x += s.vx * dt; s.y += s.vy * dt;
+  s.t += dt; s.flight += dt;
+
+  level.stars.forEach((st, i) => {
+    if (!s.got.includes(i) && Math.hypot(st.x - s.x, st.y - s.y) < STAR_R) s.got.push(i);
+  });
+  const pt = level.portal;
+  if (Math.hypot(pt.x - s.x, pt.y - s.y) < pt.r) { s.status = 'win'; return; }
+  if (s.x < -150 || s.x > W + 150 || s.y < -150 || s.y > H + 150 || s.flight > MAX_FLIGHT) s.status = 'lost';
+}
+// @@SIM_END
+
+// ================================================================
+//  畫面與狀態
+// ================================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const $ = id => document.getElementById(id);
+let scale = 1, dpr = 1;
+
+function resize() {
+  const maxW = window.innerWidth - 16, maxH = window.innerHeight - 16;
+  scale = Math.min(maxW / W, maxH / H);
+  const cw = W * scale, ch = H * scale;
+  dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cw + 'px';
+  canvas.style.height = ch + 'px';
+  canvas.width = Math.round(cw * dpr);
+  canvas.height = Math.round(ch * dpr);
+  stage.style.width = cw + 'px';
+  stage.style.height = ch + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+let mode = 'help';          // help / menu / select / play / win / end
+let levelIdx = 0;
+let level = LEVELS[0];
+let shot = null;            // 正在飛的探測器
+let launches = 0;
+let worldT = 0;             // 世界時間（衛星一直在轉）
+let drag = null;            // 拖曳中 {sx, sy, cx, cy}
+let trail = [];
+let particles = [];
+let toast = { text: '', t: 0 };
+let resetTimer = 0;
+let lastShotGot = [];       // 上一發吃到的星星（飛行中顯示）
+let calloutT = 0;           // 反重力星提示的剩餘顯示時間
+
+// 背景星空
+const bgStars = Array.from({ length: 180 }, () => ({
+  x: Math.random() * W, y: Math.random() * H,
+  r: Math.random() * 1.4 + .2, ph: Math.random() * Math.PI * 2, sp: Math.random() * 2 + .5,
+}));
+const nebulas = [
+  { x: 250, y: 150, r: 260, c: 'rgba(120,70,255,0.10)' },
+  { x: 800, y: 480, r: 300, c: 'rgba(255,80,170,0.07)' },
+  { x: 650, y: 80, r: 200, c: 'rgba(60,180,255,0.07)' },
+];
+
+// ---------- 最佳紀錄（存在瀏覽器） ----------
+function loadBest() {
+  try { return JSON.parse(localStorage.getItem('gravitySlingshotBest')) || {}; } catch (e) { return {}; }
+}
+function saveBest(b) {
+  try { localStorage.setItem('gravitySlingshotBest', JSON.stringify(b)); } catch (e) {}
+}
+let best = loadBest();
+
+function starText(n) {
+  let s = '';
+  for (let i = 0; i < 3; i++) s += i < n ? '★' : '<span class="off">★</span>';
+  return s;
+}
+
+// ---------- 畫面切換 ----------
+function show(id) {
+  ['menu', 'help', 'select', 'win', 'end'].forEach(o => $(o).classList.toggle('hidden', o !== id));
+  $('hud').classList.toggle('hidden', !(id === null));
+}
+
+function startLevel(i) {
+  levelIdx = i;
+  level = LEVELS[i];
+  shot = null; drag = null; trail = []; particles = [];
+  launches = 0; lastShotGot = []; resetTimer = 0;
+  calloutT = level.bodies.some(b => b.type === 'repulsor') ? 5 : 0;
+  mode = 'play';
+  $('hudLevel').textContent = `第 ${i + 1} 關：${level.name}`;
+  updateHud();
+  show(null);
+  showToast(i === 0 ? '按住畫面往後拉，放開發射！' : level.name, 2.2);
+}
+
+function openSelect() {
+  mode = 'select';
+  const cards = $('cards');
+  cards.innerHTML = '';
+  LEVELS.forEach((lv, i) => {
+    const rec = best[i];
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = `
+      <div class="num">${i + 1}</div>
+      <div class="name">${lv.name}</div>
+      <div class="stars">${starText(rec ? rec.stars : 0)}</div>
+      <div class="rec">${rec ? `最佳：${rec.launches} 次發射` : '尚未通關'}</div>`;
+    el.onclick = () => startLevel(i);
+    cards.appendChild(el);
+  });
+  show('select');
+}
+
+function updateHud() {
+  $('hudShots').textContent = launches;
+  $('hudStars').textContent = shot ? shot.got.length : lastShotGot.length;
+}
+
+function showToast(text, dur = 1.4) { toast = { text, t: dur }; }
+
+// ---------- 過關 ----------
+function onWin() {
+  const got = shot.got.length;
+  const rec = best[levelIdx];
+  const isBetter = !rec || got > rec.stars || (got === rec.stars && launches < rec.launches);
+  if (isBetter) { best[levelIdx] = { stars: got, launches }; saveBest(best); }
+
+  mode = 'win';
+  $('winStars').innerHTML = starText(got);
+  $('winInfo').innerHTML =
+    `發射 ${launches} 次，收集 ${got} 顆星星` +
+    (isBetter ? '<br><span style="color:#8ef0b0">新紀錄！</span>' : '') +
+    (got < 3 ? '<br>同一發把 3 顆星星都收齊，就能拿到滿分！' : '');
+  $('btnNext').textContent = levelIdx < LEVELS.length - 1 ? '下一關' : '查看總成績';
+  show('win');
+}
+
+function showEnd() {
+  mode = 'end';
+  let total = 0, shots = 0, cleared = 0;
+  LEVELS.forEach((_, i) => { if (best[i]) { total += best[i].stars; shots += best[i].launches; cleared++; } });
+  $('endStars').innerHTML = `${total} / 9 <span style="font-size:.6em">★</span>`;
+  $('endInfo').innerHTML = `通關 ${cleared} / ${LEVELS.length} 關，最佳紀錄總發射 ${shots} 次` +
+    (total < 9 ? '<br>還有星星沒收齊，回去挑戰滿星吧！' : '<br>完美！你是重力助推大師！');
+  show('end');
+}
+
+// ---------- 按鈕 ----------
+$('btnStart').onclick = () => startLevel(0);
+$('btnHelp').onclick = () => { mode = 'help'; show('help'); };
+$('btnHelpOk').onclick = () => { mode = 'menu'; show('menu'); };
+$('btnSelect').onclick = openSelect;
+$('btnBackMenu').onclick = () => { mode = 'menu'; show('menu'); };
+$('btnRetry').onclick = () => startLevel(levelIdx);
+$('btnLevels').onclick = openSelect;
+$('btnNext').onclick = () => levelIdx < LEVELS.length - 1 ? startLevel(levelIdx + 1) : showEnd();
+$('btnAgain').onclick = () => startLevel(levelIdx);
+$('btnWinLevels').onclick = openSelect;
+$('btnEndLevels').onclick = openSelect;
+$('btnEndMenu').onclick = () => { mode = 'menu'; show('menu'); };
+
+// ---------- 拖曳發射（滑鼠與觸控共用） ----------
+function toWorld(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+function pullVector() {
+  let dx = drag.sx - drag.cx, dy = drag.sy - drag.cy;   // 發射方向 = 拉的反方向
+  const len = Math.hypot(dx, dy);
+  if (len > MAX_DRAG) { dx *= MAX_DRAG / len; dy *= MAX_DRAG / len; }
+  return { dx, dy, len: Math.min(len, MAX_DRAG) };
+}
+canvas.addEventListener('pointerdown', e => {
+  if (mode !== 'play' || shot || resetTimer > 0) return;
+  const p = toWorld(e);
+  drag = { sx: p.x, sy: p.y, cx: p.x, cy: p.y };
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = toWorld(e);
+  drag.cx = p.x; drag.cy = p.y;
+});
+canvas.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const v = pullVector();
+  drag = null;
+  if (v.len < 12) return;   // 拉太短當作取消
+  shot = createShot(level, v.dx * POWER, v.dy * POWER, worldT);
+  launches++;
+  trail = [];
+  lastShotGot = [];
+  updateHud();
+});
+canvas.addEventListener('pointercancel', () => { drag = null; });
+
+// ================================================================
+//  主迴圈
+// ================================================================
+let lastTime = performance.now();
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  worldT += dt;
+  if (toast.t > 0) toast.t -= dt;
+  if (calloutT > 0) calloutT -= dt;
+
+  particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; p.vx *= .98; p.vy *= .98; });
+  particles = particles.filter(p => p.life > 0);
+
+  if (resetTimer > 0) {
+    resetTimer -= dt;
+    if (resetTimer <= 0) { shot = null; trail = []; updateHud(); }
+    return;
+  }
+
+  if (mode === 'play' && shot && shot.status === 'flying') {
+    const SUB = 1 / 240;
+    let left = dt;
+    while (left > 0 && shot.status === 'flying') {
+      const h = Math.min(SUB, left);
+      stepShot(shot, level, h);
+      left -= h;
+    }
+    trail.push({ x: shot.x, y: shot.y });
+    if (trail.length > 140) trail.shift();
+    updateHud();
+
+    if (shot.status === 'win') {
+      burst(shot.x, shot.y, '#d29bff', 40);
+      lastShotGot = shot.got.slice();
+      onWin();
+      shot.status = 'done';
+    } else if (shot.status === 'crash') {
+      burst(shot.x, shot.y, '#ff9a5c', 50);
+      showToast('墜毀！再試一次');
+      lastShotGot = shot.got.slice();
+      resetTimer = 1.1;
+    } else if (shot.status === 'lost') {
+      showToast('迷失在太空中…');
+      lastShotGot = shot.got.slice();
+      resetTimer = 0.9;
+    }
+  }
+}
+
+function burst(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = Math.random() * 220 + 40;
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: Math.random() * .8 + .4, color });
+  }
+}
+
+// ================================================================
+//  繪圖
+// ================================================================
+function draw() {
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  drawBackground();
+  if (mode === 'menu' || mode === 'help') { drawMenuScene(); return; }
+
+  drawPortal();
+  drawStarsToCollect();
+  drawBodies();
+  drawTrail();
+  drawProbe();
+  drawSling();
+  drawParticles();
+  drawCallout();
+  drawToast();
+}
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#070920');
+  g.addColorStop(1, '#0c0618');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  nebulas.forEach(n => {
+    const rg = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    rg.addColorStop(0, n.c); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
+  });
+  bgStars.forEach(s => {
+    const a = .35 + .65 * (0.5 + 0.5 * Math.sin(worldT * s.sp + s.ph));
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+// 主選單背景：一顆行星和繞行的小探測器
+function drawMenuScene() {
+  const cx = 500, cy = 300;
+  drawPlanet(cx, cy, 70, '#c4b5fd', '#4c1d95');
+  for (let i = 0; i < 3; i++) {
+    const a = worldT * (0.8 + i * 0.25) + i * 2;
+    const r = 140 + i * 55;
+    ctx.strokeStyle = 'rgba(160,170,255,0.12)';
+    ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.45, 0, 0, Math.PI * 2); ctx.stroke();
+    glowDot(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.45, 4, '#9be7ff');
+  }
+}
+
+function drawPlanet(x, y, r, c1, c2) {
+  const glow = ctx.createRadialGradient(x, y, r * .8, x, y, r * 1.7);
+  glow.addColorStop(0, c1 + '55'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(x, y, r * 1.7, 0, Math.PI * 2); ctx.fill();
+  const g = ctx.createRadialGradient(x - r * .4, y - r * .4, r * .1, x, y, r);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  // 星球表面的條紋
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = r * .12;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath(); ctx.ellipse(x, y + i * r * .35, r * 1.1, r * .12, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBodies() {
+  level.bodies.forEach(b => {
+    const p = bodyPos(b, shot && shot.status === 'flying' ? shot.t : worldT);
+    if (b.type === 'planet') {
+      drawPlanet(p.x, p.y, b.r, b.c1, b.c2);
+    } else if (b.type === 'moon') {
+      const o = b.orbit;
+      ctx.strokeStyle = 'rgba(200,200,230,0.15)';
+      ctx.setLineDash([4, 8]);
+      ctx.beginPath(); ctx.arc(o.cx, o.cy, o.radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      drawPlanet(p.x, p.y, b.r, '#e5e7eb', '#4b5563');
+    } else if (b.type === 'repulsor') {
+      // 反重力星：向外擴散的波紋
+      for (let i = 0; i < 3; i++) {
+        const k = ((worldT * 0.6 + i / 3) % 1);
+        ctx.strokeStyle = `rgba(110,240,255,${0.5 * (1 - k)})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, b.r + k * 70, 0, Math.PI * 2); ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, b.r);
+      g.addColorStop(0, '#ffffff'); g.addColorStop(.5, '#67e8f9'); g.addColorStop(1, '#0e7490');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, b.r, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+}
+
+function drawPortal() {
+  const p = level.portal;
+  const rg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 2);
+  rg.addColorStop(0, 'rgba(210,155,255,0.6)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = rg;
+  ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 2, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 3; i++) {
+    const rr = p.r - i * 8;
+    const a = worldT * (i % 2 ? -2 : 2.5) + i;
+    ctx.strokeStyle = ['#e9d5ff', '#c084fc', '#f0abfc'][i];
+    ctx.beginPath(); ctx.arc(p.x, p.y, rr, a, a + Math.PI * 1.3); ctx.stroke();
+  }
+}
+
+function starShape(x, y, r, rot) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? r * .45 : r;
+    const a = rot + i * Math.PI / 5 - Math.PI / 2;
+    ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+
+function drawStarsToCollect() {
+  const got = shot ? shot.got : lastShotGot;
+  level.stars.forEach((s, i) => {
+    const taken = got.includes(i);
+    const bob = Math.sin(worldT * 3 + i) * 3;
+    ctx.save();
+    ctx.globalAlpha = taken ? 0.18 : 1;
+    ctx.shadowColor = '#ffe27a';
+    ctx.shadowBlur = taken ? 0 : 14;
+    ctx.fillStyle = '#ffe27a';
+    starShape(s.x, s.y + bob, 11, worldT * 0.8);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawTrail() {
+  for (let i = 1; i < trail.length; i++) {
+    const a = i / trail.length;
+    ctx.strokeStyle = `rgba(140,220,255,${a * 0.8})`;
+    ctx.lineWidth = a * 4;
+    ctx.beginPath();
+    ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+    ctx.lineTo(trail[i].x, trail[i].y);
+    ctx.stroke();
+  }
+}
+
+function glowDot(x, y, r, color) {
+  ctx.save();
+  ctx.shadowColor = color; ctx.shadowBlur = 16;
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawProbe() {
+  const L = level.launch;
+  // 發射台
+  ctx.strokeStyle = 'rgba(155,231,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(L.x, L.y, 16, 0, Math.PI * 2); ctx.stroke();
+
+  if (shot && shot.status === 'flying') {
+    const ang = Math.atan2(shot.vy, shot.vx);
+    ctx.save();
+    ctx.translate(shot.x, shot.y);
+    ctx.rotate(ang);
+    ctx.shadowColor = '#9be7ff'; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#e0f7ff';
+    ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, 6); ctx.lineTo(-4, 0); ctx.lineTo(-7, -6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff9a5c';
+    ctx.beginPath(); ctx.arc(-7, 0, 2.5 + Math.random() * 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (!shot && resetTimer <= 0 && mode === 'play') {
+    // 待發射：探測器停在發射台（拖曳時跟著拉動）
+    let x = L.x, y = L.y;
+    if (drag) { const v = pullVector(); x -= v.dx * 0.35; y -= v.dy * 0.35; }
+    const pulse = 1 + Math.sin(worldT * 4) * 0.15;
+    if (!drag) {
+      ctx.strokeStyle = 'rgba(155,231,255,0.35)';
+      ctx.beginPath(); ctx.arc(L.x, L.y, 24 * pulse, 0, Math.PI * 2); ctx.stroke();
+    }
+    glowDot(x, y, PROBE_R, '#e0f7ff');
+  }
+}
+
+// 彈弓的橡皮筋 + 力道條（不顯示預測軌跡）
+function drawSling() {
+  if (!drag) return;
+  const L = level.launch;
+  const v = pullVector();
+  const px = L.x - v.dx * 0.35, py = L.y - v.dy * 0.35;
+  const pct = v.len / MAX_DRAG;
+  ctx.strokeStyle = `hsl(${200 - pct * 170}, 90%, 65%)`;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(L.x - 12, L.y - 12); ctx.lineTo(px, py); ctx.lineTo(L.x + 12, L.y + 12);
+  ctx.stroke();
+  // 力道條
+  const bx = L.x - 30, by = L.y + 30;
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fillRect(bx, by, 60, 6);
+  ctx.fillStyle = `hsl(${200 - pct * 170}, 90%, 60%)`;
+  ctx.fillRect(bx, by, 60 * pct, 6);
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`力道 ${Math.round(pct * 100)}%`, L.x, by + 20);
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = Math.max(p.life, 0);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// 反重力星旁邊彈出的提示框
+function drawCallout() {
+  if (calloutT <= 0 || mode !== 'play') return;
+  const b = level.bodies.find(x => x.type === 'repulsor');
+  if (!b) return;
+  const appear = Math.min(1, (5 - calloutT) * 4);   // 彈出動畫
+  const alpha = Math.min(1, calloutT * 2) * appear;
+  const pop = 0.7 + 0.3 * appear;
+  const text = '⚠ 這是反重力星，會把探測器推開！';
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = 'bold 17px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  const w = ctx.measureText(text).width + 28, h = 38;
+  const cx = b.x, cy = b.y - b.r - 58;
+  ctx.translate(cx, cy + h / 2);
+  ctx.scale(pop, pop);
+  ctx.translate(-cx, -(cy + h / 2));
+  ctx.fillStyle = 'rgba(8, 40, 55, 0.92)';
+  ctx.strokeStyle = '#67e8f9';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, cy, w, h, 12);
+  ctx.moveTo(cx - 9, cy + h); ctx.lineTo(cx, cy + h + 12); ctx.lineTo(cx + 9, cy + h);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#e0fbff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, cx, cy + h / 2 + 1);
+  ctx.restore();
+}
+
+function drawToast() {
+  if (toast.t <= 0 || mode !== 'play') return;
+  ctx.globalAlpha = Math.min(1, toast.t * 2);
+  ctx.font = 'bold 28px "Noto Sans TC", "Microsoft JhengHei", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#7c5cff'; ctx.shadowBlur = 18;
+  ctx.fillText(toast.text, W / 2, 90);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
